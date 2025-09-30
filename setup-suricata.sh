@@ -74,10 +74,37 @@ print_success "Suricata installed"
 print_status "Step 5/8: Creating custom Suricata rules..."
 sudo mkdir -p /etc/suricata/rules
 cat << 'EOF' | sudo tee /etc/suricata/rules/local.rules
+# ------------------------
+# Basic rules from Lab 1
+# ------------------------
 # Block all ICMP packets — basic IPS test
 drop icmp any any -> any any (msg:"[IPS] BLOCK ICMP"; sid:1000007; rev:1;)
 # Log HTTP requests — basic IDS test
 alert http any any -> any any (msg:"[IDS] HTTP Request Detected"; sid:100002; rev:1; flow:to_server; classtype:policy-violation;)
+
+# ------------------------
+# Lab 2: Nmap scan detection and blocking
+# ------------------------
+# SYN scan (nmap -sS) — block
+drop tcp any any -> any any (flags:S; msg:"[IPS] NMAP SYN Scan Blocked"; threshold: type both, track by_src, count 10, seconds 6; sid:1001001; rev:1;)
+
+# XMAS scan (nmap -sX) — alert
+alert tcp any any -> any any (flags:FPU; msg:"[IDS] NMAP XMAS Scan Detected"; threshold: type both, track by_src, count 5, seconds 6; sid:1001002; rev:1;)
+
+# UDP scan (nmap -sU) — block
+drop udp any any -> any any (msg:"[IPS] NMAP UDP Scan Blocked"; threshold: type both, track by_src, count 10, seconds 10; sid:1001003; rev:1;)
+
+# OS fingerprinting (nmap -O) — alert
+alert ip any any -> any any (msg:"[IDS] Possible OS Fingerprinting Attempt"; ipopts: any; threshold: type both, track by_src, count 5, seconds 20; sid:1001101; rev:1;)
+
+# ACK scan (nmap -sA) — alert
+alert tcp any any -> any any (flags:A; msg:"[IDS] NMAP ACK Scan Detected"; threshold: type both, track by_src, count 5, seconds 10; sid:1001004; rev:1;)
+
+# FIN scan (nmap -sF) — alert
+alert tcp any any -> any any (flags:F; msg:"[IDS] NMAP FIN Scan Detected"; threshold: type both, track by_src, count 3, seconds 10; sid:1001005; rev:1;)
+
+# NULL scan (nmap -sN) — alert
+alert tcp any any -> any any (flags:0; msg:"[IDS] NMAP NULL Scan Detected"; threshold: type both, track by_src, count 2, seconds 10; sid:1001006; rev:1;)
 EOF
 print_success "Custom rules created"
 

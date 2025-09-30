@@ -19,6 +19,18 @@ services:
         ipv4_address: 172.16.90.20
     command: tail -f /dev/null
 
+  evebox:
+    image: jasonish/evebox:latest
+    container_name: evebox
+    hostname: evebox
+    ports:
+      - "5636:5636"
+    volumes:
+      - /var/log/suricata:/var/log/suricata:ro
+    command: evebox server -D -e /var/log/suricata/eve.json --host 0.0.0.0 --port 5636
+    networks:
+      suricata-lab:
+
 networks:
   suricata-lab:
     driver: bridge

@@ -1,5 +1,5 @@
-# ITMO Network Security | Laboratory Work 1: Introduction to IDS/IPS and Suricata Architecture
-Laboratory work on deploying and testing Suricata in IDS/IPS modes within a Docker environment. Includes rule configuration, Docker Compose setup, and traffic blocking verification.
+# ITMO Network Security | Suricata IDS/IPS: Docker Lab
+The project demonstrates the way to install and run Suricata in IPS mode on the Ubuntu host, provides a Docker lab environment with attacker/victim containers, adds EveBox for UI-driven analysis, and provide hands-on experience with both basic rules (ICMP block, HTTP alert) and advanced Nmap scan detection/blocking — all in one cohesive setup.
 
 ## Practical Part: Installing and Configuring Suricata in IPS Mode on Ubuntu 24.04
 
@@ -207,13 +207,10 @@ Running Suricata in **IPS mode inside a Docker container** comes with serious ch
 ## 📁 Repository Structure
 
 ```
-Suricata-IPS-Docker-Lab/
-├── README.md # This file
-├── docker-compose.yml # Docker Compose file for lab environment deployment
-├── configs/
-│   └── suricata.yaml # Example Suricata configuration file (optional)
-└── rules/
-    └── local.rules # Example custom rules file (optional)
+ITMO_Suricata-IPS-Docker-Lab/
+├── README.md                 # Unified lab guide (this file)
+├── docker-compose.yml        # Attacker/Victim lab and optional EveBox service
+└── setup-suricata.sh         # Host-side setup: Suricata, NFQUEUE, rules, restart
 ```
 
 ## 🔗 Useful Links
@@ -222,3 +219,88 @@ Suricata-IPS-Docker-Lab/
 2.  [Suricata Community and Forum](https://forum.suricata.io) 
 3.  [OISF Suricata Repository on GitHub](https://github.com/OISF/suricata)
 4.  [Article on Building Scalable IDS/IPS with Suricata in AWS](https://www.tecracer.com/blog/2024/05/build-a-scalable-ids-and-ips-solution-using-suricata-and-aws-gateway-load-balancer.html) 
+
+
+## Detecting and Blocking Nmap Scans with Suricata
+
+### Theory (brief)
+- **Port scanning** helps find open/closed ports and potential vulnerabilities.
+- **nmap** scan types: SYN `-sS`, Connect `-sT`, UDP `-sU`, XMAS `-sX`, OS fingerprinting `-O`, etc.
+- **Suricata** can detect/block scans via signature rules, operate in IPS mode (drop) or IDS (alert), and logs to `eve.json` for investigation.
+
+### Environment
+- Docker Compose includes `attacker` and `victim` containers used to generate traffic.
+- Optionally, include `evebox` to view Suricata events at `http://localhost:5636`.
+- `evebox` reads Suricata EVE logs from the host: `/var/log/suricata/eve.json` (mounted read-only).
+
+### Rules: Detection/Blocking of Nmap Scans
+The setup script writes these into `/etc/suricata/rules/local.rules` and enables `rule-files` in `suricata.yaml`.
+
+```
+# SYN scan (nmap -sS) — block
+drop tcp any any -> any any (flags:S; msg:"[IPS] NMAP SYN Scan Blocked"; threshold: type both, track by_src, count 10, seconds 6; sid:1001001; rev:1;)
+
+# XMAS scan (nmap -sX) — alert
+alert tcp any any -> any any (flags:FPU; msg:"[IDS] NMAP XMAS Scan Detected"; threshold: type both, track by_src, count 5, seconds 6; sid:1001002; rev:1;)
+
+# UDP scan (nmap -sU) — block
+drop udp any any -> any any (msg:"[IPS] NMAP UDP Scan Blocked"; threshold: type both, track by_src, count 10, seconds 10; sid:1001003; rev:1;)
+
+# OS fingerprinting (nmap -O) — alert
+alert ip any any -> any any (msg:"[IDS] Possible OS Fingerprinting Attempt"; ipopts: any; threshold: type both, track by_src, count 5, seconds 20; sid:1001101; rev:1;)
+
+# ACK scan (nmap -sA) — alert
+alert tcp any any -> any any (flags:A; msg:"[IDS] NMAP ACK Scan Detected"; threshold: type both, track by_src, count 5, seconds 10; sid:1001004; rev:1;)
+
+# FIN scan (nmap -sF) — alert
+alert tcp any any -> any any (flags:F; msg:"[IDS] NMAP FIN Scan Detected"; threshold: type both, track by_src, count 3, seconds 10; sid:1001005; rev:1;)
+
+# NULL scan (nmap -sN) — alert
+alert tcp any any -> any any (flags:0; msg:"[IDS] NMAP NULL Scan Detected"; threshold: type both, track by_src, count 2, seconds 10; sid:1001006; rev:1;)
+```
+
+### Activation
+- Rules are written by `setup-suricata.sh`. Suricata is restarted via systemd with NFQUEUE (IPS mode) as in Lab 1.
+- Ensure iptables rule routes Docker traffic to NFQUEUE queue number 1 using the `DOCKER-USER` chain (the script does this for you).
+
+### Generate test traffic (from attacker)
+Install tools and run scans:
+
+```bash
+docker exec attacker apt update
+docker exec attacker apt install -y nmap iputils-ping curl
+
+# SYN scan
+docker exec attacker nmap -sS 172.16.90.10
+
+# XMAS scan
+docker exec attacker nmap -sX 172.16.90.10
+
+# UDP scan
+docker exec attacker nmap -sU 172.16.90.10
+
+# OS fingerprinting
+docker exec attacker nmap -O 172.16.90.10
+```
+
+### Verify logs and EveBox
+- Raw logs: `sudo tail -f /var/log/suricata/eve.json | jq 'select(.event_type != "flow")'`
+- EveBox UI: open `http://localhost:5636` and filter by `event_type:alert` or `event_type:drop`.
+- Expect `drop` events for blocked scans (e.g., SYN/UDP) and `alert` for detected-only techniques.
+
+### Blocking strategy
+- Use `drop` for noisy and clear patterns (SYN, UDP scans).
+- Use `alert` for OS fingerprinting and rare techniques to review before enforcing.
+
+### Reducing false positives
+- Tune `threshold` values: increase `count`/`seconds` or scope by `src_ip`.
+- Add IP-based exceptions for known scanners.
+
+### Extra: quick jq stats by source IP
+```bash
+# Top sources by alerts/drops
+jq -r 'select(.event_type=="alert" or .event_type=="drop") | .src_ip' /var/log/suricata/eve.json | sort | uniq -c | sort -nr | head
+
+# Count by signature message
+jq -r 'select(.event_type=="alert" or .event_type=="drop") | .alert.signature' /var/log/suricata/eve.json | sort | uniq -c | sort -nr | head
+```
