@@ -1,7 +1,18 @@
 # ITMO Network Security | Suricata IDS/IPS: Docker Lab
 The project demonstrates the way to install and run Suricata in IPS mode on the Ubuntu host, provides a Docker lab environment with attacker/victim containers, adds EveBox for UI-driven analysis, and provide hands-on experience with both basic rules (ICMP block, HTTP alert) and advanced Nmap scan detection/blocking — all in one cohesive setup.
 
-## Practical Part: Installing and Configuring Suricata in IPS Mode on Ubuntu 24.04
+
+## Repository Structure
+
+```
+ITMO_Suricata-IPS-Docker-Lab/
+├── README.md                 # Unified lab guide (this file)
+├── docker-compose.yml        # Attacker/Victim lab and optional EveBox service
+└── setup-suricata.sh         # Host-side setup: Suricata, NFQUEUE, rules, restart
+```
+
+
+## Installing and Configuring Suricata in IPS Mode on Ubuntu 24.04
 
 ### 🛠️ Installation Steps
 
@@ -193,45 +204,11 @@ docker exec attacker apt update && docker exec attacker apt install -y curl iput
     -   When executing ping, events with `event_type: "drop"` and message `"[IPS] BLOCK ICMP"` should appear in the log.
     -   When executing curl, events with `event_type: "alert"` and message `"[IDS] HTTP Request Detected"` should appear in the log, as well as events with `event_type: "http"` containing HTTP request details.
 
-### ⚠️ Bonus Task: IPS Limitations in Docker
-
-Running Suricata in **IPS mode inside a Docker container** comes with serious challenges:
-
-1.  **Network Architecture**: IPS mode requires traffic to pass *through* Suricata (inline mode). In Docker, this is difficult to organize, as by default traffic between containers in the same network goes directly through the bridge, bypassing other containers. A workaround is using `host` network mode or forwarding network interfaces to the container, which reduces isolation and security.
-2.  **Traffic Capture Drivers**: For inline operation in Linux, Suricata typically uses the **NFQUEUE** mechanism (which iptables are configured for in this guide) or **AF_PACKET**. NFQUEUE configuration requires modifying iptables rules on the host, which can be difficult to manage from a container. AF_PACKET in IPS mode (with `copy-mode: ips` option) often requires direct work with physical or bridge interfaces, which is problematic inside a container without additional privileges and configurations.
-3.  **Privileges and Capabilities**: A Suricata container in IPS mode requires elevated privileges (`NET_ADMIN`, `SYS_NICE`, `NET_RAW`) and access to host network namespaces, which contradicts containerization principles and minimal privileges.
-4.  **Performance and Scalability**: Processing all traffic in a single container can become a bottleneck. In production environments, specialized network solutions (e.g., AWS Gateway Load Balancer with GENEVE) are often used for IPS scaling, which redirect traffic through a group of Suricata instances.
-
-**Conclusion:** It's much simpler and more reliable to run Suricata in **IPS mode directly on the host** (as done in this lab work), where it has direct access to network interfaces and full control over the network stack. Inside Docker environments, it's more natural and simple to use Suricata in **IDS mode**, for example, in network interface monitoring mode or analyzing mirrored traffic (SPAN port).
-
-## 📁 Repository Structure
-
-```
-ITMO_Suricata-IPS-Docker-Lab/
-├── README.md                 # Unified lab guide (this file)
-├── docker-compose.yml        # Attacker/Victim lab and optional EveBox service
-└── setup-suricata.sh         # Host-side setup: Suricata, NFQUEUE, rules, restart
-```
-
-## 🔗 Useful Links
-
-1.  [Official Suricata Documentation](https://docs.suricata.io) 
-2.  [Suricata Community and Forum](https://forum.suricata.io) 
-3.  [OISF Suricata Repository on GitHub](https://github.com/OISF/suricata)
-4.  [Article on Building Scalable IDS/IPS with Suricata in AWS](https://www.tecracer.com/blog/2024/05/build-a-scalable-ids-and-ips-solution-using-suricata-and-aws-gateway-load-balancer.html) 
-
-
 ## Detecting and Blocking Nmap Scans with Suricata
 
 ### Theory (brief)
-- **Port scanning** helps find open/closed ports and potential vulnerabilities.
 - **nmap** scan types: SYN `-sS`, Connect `-sT`, UDP `-sU`, XMAS `-sX`, OS fingerprinting `-O`, etc.
 - **Suricata** can detect/block scans via signature rules, operate in IPS mode (drop) or IDS (alert), and logs to `eve.json` for investigation.
-
-### Environment
-- Docker Compose includes `attacker` and `victim` containers used to generate traffic.
-- Optionally, include `evebox` to view Suricata events at `http://localhost:5636`.
-- `evebox` reads Suricata EVE logs from the host: `/var/log/suricata/eve.json` (mounted read-only).
 
 ### Rules: Detection/Blocking of Nmap Scans
 The setup script writes these into `/etc/suricata/rules/local.rules` and enables `rule-files` in `suricata.yaml`.
@@ -295,12 +272,3 @@ docker exec attacker nmap -O 172.16.90.10
 ### Reducing false positives
 - Tune `threshold` values: increase `count`/`seconds` or scope by `src_ip`.
 - Add IP-based exceptions for known scanners.
-
-### Extra: quick jq stats by source IP
-```bash
-# Top sources by alerts/drops
-jq -r 'select(.event_type=="alert" or .event_type=="drop") | .src_ip' /var/log/suricata/eve.json | sort | uniq -c | sort -nr | head
-
-# Count by signature message
-jq -r 'select(.event_type=="alert" or .event_type=="drop") | .alert.signature' /var/log/suricata/eve.json | sort | uniq -c | sort -nr | head
-```
