@@ -248,3 +248,9 @@ echo "5. Monitor Suricata logs:"
 echo "   sudo tail -f /var/log/suricata/eve.json | jq 'select(.event_type != \"flow\")'"
 echo ""
 print_warning "Note: Make sure Docker is installed and running before starting the lab environment."
+
+# Lab 3 note:
+# For the extended vulnerable services lab (docker-compose.lab3.yml), add the
+# additional detection/prevention rules for ActiveMQ/Redis/MinIO/Samba/Jenkins
+# into /etc/suricata/rules/local.rules as described in README.md, then restart
+# Suricata: systemctl restart suricata
