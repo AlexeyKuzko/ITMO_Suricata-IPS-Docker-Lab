@@ -74,39 +74,56 @@ print_success "Suricata installed"
 print_status "Step 5/8: Creating custom Suricata rules..."
 sudo mkdir -p /etc/suricata/rules
 cat << 'EOF' | sudo tee /etc/suricata/rules/local.rules
-# ------------------------
-# Basic rules from Lab 1
-# ------------------------
+# Lab 1
 # Block all ICMP packets — basic IPS test
 drop icmp any any -> any any (msg:"[IPS] BLOCK ICMP"; sid:1000007; rev:1;)
 # Log HTTP requests — basic IDS test
 alert http any any -> any any (msg:"[IDS] HTTP Request Detected"; sid:100002; rev:1; flow:to_server; classtype:policy-violation;)
 
-# ------------------------
-# Lab 2: Nmap scan detection and blocking
-# ------------------------
+# Lab 2
 # SYN scan (nmap -sS) — block
 drop tcp any any -> any any (flags:S; msg:"[IPS] NMAP SYN Scan Blocked"; threshold: type both, track by_src, count 10, seconds 6; sid:1001001; rev:1;)
-
 # XMAS scan (nmap -sX) — alert
 alert tcp any any -> any any (flags:FPU; msg:"[IDS] NMAP XMAS Scan Detected"; threshold: type both, track by_src, count 5, seconds 6; sid:1001002; rev:1;)
-
 # UDP scan (nmap -sU) — block
 drop udp any any -> any any (msg:"[IPS] NMAP UDP Scan Blocked"; threshold: type both, track by_src, count 10, seconds 10; sid:1001003; rev:1;)
-
 # OS fingerprinting (nmap -O) — alert
 alert ip any any -> any any (msg:"[IDS] Possible OS Fingerprinting Attempt"; ipopts: any; threshold: type both, track by_src, count 5, seconds 20; sid:1001101; rev:1;)
-
 # ACK scan (nmap -sA) — alert
 alert tcp any any -> any any (flags:A; msg:"[IDS] NMAP ACK Scan Detected"; threshold: type both, track by_src, count 5, seconds 10; sid:1001004; rev:1;)
-
 # FIN scan (nmap -sF) — alert
 alert tcp any any -> any any (flags:F; msg:"[IDS] NMAP FIN Scan Detected"; threshold: type both, track by_src, count 3, seconds 10; sid:1001005; rev:1;)
-
 # NULL scan (nmap -sN) — alert
 alert tcp any any -> any any (flags:0; msg:"[IDS] NMAP NULL Scan Detected"; threshold: type both, track by_src, count 2, seconds 10; sid:1001006; rev:1;)
+
+# Lab 3
+# ActiveMQ (CVE-2023-46604) - detect OpenWire connections and ProcessBuilder
+alert tcp any any -> any 61616 (msg:"[IDS] ActiveMQ OpenWire Connection"; flow:to_server,established; threshold: type limit, track by_src, count 1, seconds 300; sid:3000001; rev:1;)
+drop tcp any any -> any 61616 (msg:"[IPS] ActiveMQ ProcessBuilder Exploit Blocked"; flow:to_server,established; content:"ProcessBuilder"; nocase; threshold: type limit, track by_src, count 1, seconds 60; sid:3000002; rev:1;)
+drop tcp any any -> any 61616 (msg:"[IPS] ActiveMQ ClassPathXmlApplicationContext Blocked"; flow:to_server,established; content:"ClassPathXmlApplicationContext"; nocase; threshold: type limit, track by_src, count 1, seconds 60; sid:3000003; rev:1;)
+# Redis - detect unauthorized access and dangerous operations
+alert tcp any any -> any 6379 (msg:"[IDS] Redis Unauthorized Access"; flow:to_server,established; threshold: type limit, track by_src, count 1, seconds 300; sid:3000101; rev:1;)
+drop tcp any any -> any 6379 (msg:"[IPS] Redis Config Manipulation Blocked"; flow:to_server,established; content:"config set dir"; nocase; threshold: type limit, track by_src, count 1, seconds 60; sid:3000102; rev:1;)
+alert tcp any any -> any 6379 (msg:"[IDS] Redis SAVE Command Detected"; flow:to_server,established; content:"save"; nocase; sid:3000103; rev:1;)
+alert tcp any any -> any 6379 (msg:"[IDS] Redis FLUSHALL Command Detected"; flow:to_server,established; content:"flushall"; nocase; sid:3000104; rev:1;)
+# MinIO (CVE-2023-28432) - detect bootstrap verify exploitation
+drop http any any -> any 9000 (msg:"[IPS] MinIO CVE-2023-28432 Exploitation Blocked"; flow:to_server,established; http_uri; content:"/minio/bootstrap/v1/verify"; http_method; content:"POST"; threshold: type limit, track by_src, count 1, seconds 3600; sid:3000201; rev:1;)
+alert http any any -> any 9000 (msg:"[IDS] MinIO S3 API Operation Detected"; flow:to_server,established; http_header; content:"aws4_request"; sid:3000202; rev:1;)
+# Samba (CVE-2017-7494) - detect SMB library uploads
+alert smb any any -> any 445 (msg:"[IDS] SMB Shared Library Upload"; flow:to_server,established; smb_command:write; filename:".so"; sid:3000301; rev:1;)
+drop smb any any -> any 445 (msg:"[IPS] SambaCry Library Upload Blocked"; flow:to_server,established; smb_command:write; filename:"libbindshell-samba.so"; threshold: type limit, track by_src, count 1, seconds 3600; sid:3000302; rev:1;)
+alert tcp any any -> any 6699 (msg:"[IDS] SambaCry Bind Shell Connection"; flow:to_server; threshold: type limit, track by_src, count 1, seconds 60; sid:3000303; rev:1;)
+# Jenkins (CVE-2024-23897) - detect file read exploitation
+drop http any any -> any 8080 (msg:"[IPS] Jenkins File Read Exploitation Blocked"; flow:to_server,established; http_request_body; content:"@/"; threshold: type limit, track by_src, count 1, seconds 3600; sid:3000401; rev:1;)
+alert http any any -> any 8080 (msg:"[IDS] Jenkins CLI JAR Download"; flow:to_server,established; http_uri; content:"jenkins-cli.jar"; sid:3000402; rev:1;)
+alert http any any -> any 8080 (msg:"[IDS] Jenkins System File Access"; flow:to_server,established; http_request_body; pcre:"/@\/(etc|proc|var)/"; sid:3000403; rev:1;)
+# Generic post-exploitation detection
+alert tcp any any -> any any (msg:"[IDS] Reverse Shell Pattern /bin/sh Detected"; flow:established; content:"/bin/sh"; nocase; sid:3000501; rev:1;)
+alert tcp any any -> any any (msg:"[IDS] Reverse Shell Pattern /bin/bash Detected"; flow:established; content:"/bin/bash"; nocase; sid:3000502; rev:1;)
+alert tcp any any -> any 4444 (msg:"[IDS] Connection to Metasploit Port 4444"; flow:to_server; threshold: type limit, track by_dst, count 1, seconds 60; sid:3000503; rev:1;)
+alert tcp any any -> any 4445 (msg:"[IDS] Connection to Metasploit Port 4445"; flow:to_server; threshold: type limit, track by_dst, count 1, seconds 60; sid:3000504; rev:1;)
 EOF
-print_success "Custom rules created"
+print_success "Custom rules created (including Lab 3 vulnerable services protection)"
 
 # Step 6: Basic suricata.yaml Configuration
 print_status "Step 6/8: Configuring suricata.yaml..."
@@ -192,65 +209,30 @@ else
     exit 1
 fi
 
-# Create docker-compose.yml file
-print_status "Creating docker-compose.yml file..."
-cat << 'EOF' > docker-compose.yml
-version: '3.8'
-
-services:
-  victim:
-    image: alpine:latest
-    container_name: victim
-    hostname: victim
-    networks:
-      suricata-lab:
-        ipv4_address: 172.16.90.10
-    command: sh -c "apk add --no-cache python3 && python3 -m http.server 8000"
-    # Run a simple HTTP server on port 8000
-
-  attacker:
-    image: kalilinux/kali-rolling:latest
-    container_name: attacker
-    hostname: attacker
-    networks:
-      suricata-lab:
-        ipv4_address: 172.16.90.20
-    command: tail -f /dev/null
-    # Container will run in background
-
-networks:
-  suricata-lab:
-    driver: bridge
-    ipam:
-      config:
-        - subnet: 172.16.90.0/24
-EOF
-print_success "docker-compose.yml created"
 
 # Final instructions
 echo ""
 print_success "🎉 Suricata IPS setup completed successfully!"
 echo ""
 print_status "Next steps:"
-echo "1. Start the Docker lab environment:"
+echo "1. Start Lab 1 & 2 (basic environment):"
 echo "   docker compose up -d"
 echo ""
-echo "2. Install utilities in the attacker container:"
-echo "   docker exec attacker apt update && docker exec attacker apt install -y curl iputils-ping"
+echo "2. Start Lab 3 (vulnerable services):"
+echo "   docker compose -f docker-compose.lab3.yml up -d"
 echo ""
-echo "3. Test IPS mode (ICMP blocking):"
+echo "3. Install tools in attacker container:"
+echo "   docker exec attacker apt update && docker exec attacker apt install -y curl iputils-ping nmap"
+echo ""
+echo "4. Test basic IPS/IDS functionality:"
 echo "   docker exec attacker ping -c 4 172.16.90.10"
-echo ""
-echo "4. Test IDS mode (HTTP logging):"
 echo "   docker exec attacker curl -s http://172.16.90.10:8000"
 echo ""
 echo "5. Monitor Suricata logs:"
 echo "   sudo tail -f /var/log/suricata/eve.json | jq 'select(.event_type != \"flow\")'"
 echo ""
-print_warning "Note: Make sure Docker is installed and running before starting the lab environment."
-
-# Lab 3 note:
-# For the extended vulnerable services lab (docker-compose.lab3.yml), add the
-# additional detection/prevention rules for ActiveMQ/Redis/MinIO/Samba/Jenkins
-# into /etc/suricata/rules/local.rules as described in README.md, then restart
-# Suricata: systemctl restart suricata
+echo "6. Access EveBox UI:"
+echo "   http://localhost:5636"
+echo ""
+print_warning "Note: All Lab 3 protection rules are already installed and active!"
+print_warning "Make sure Docker is installed and running before starting the lab environment."
