@@ -133,7 +133,7 @@ services:
     ports:
       - "5636:5636"
     volumes:
-      - /var/log/suricata/eve.json:/var/log/suricata/eve.json:ro
+      - /var/log/suricata:/var/log/suricata:ro
     command: evebox server --input /var/log/suricata/eve.json --sqlite --host 0.0.0.0 --port 5636
 
 volumes:
