@@ -7,9 +7,8 @@ This project provides a complete hands-on lab for learning network security with
 ```
 ITMO_Suricata-IPS-Docker-Lab/
 ├── README.md                 # Complete lab guide (this file)
-├── docker-compose.yml        # Lab 1 & 2: Basic attacker/victim environment
-├── docker-compose.lab3.yml   # Lab 3: Vulnerable services environment
-├── smb.conf                  # Samba configuration for Lab 3
+├── docker-compose.yml        # All labs: Complete environment with all services
+├── smb.conf                  # Samba configuration
 └── setup-suricata.sh         # Automated Suricata installation script
 ```
 
@@ -56,11 +55,8 @@ This script will:
 
 ### Step 4: Start Lab Environment
 ```bash
-# Start Lab 1 & 2 (basic environment)
+# Start all lab services (includes all labs)
 docker compose up -d
-
-# Or start Lab 3 (vulnerable services)
-docker compose -f docker-compose.lab3.yml up -d
 ```
 
 ### Step 5: Verify Setup
@@ -204,41 +200,9 @@ If you prefer manual installation or need to troubleshoot, follow these steps:
 
 ### Lab 1 Testing Environment
 
-The basic lab environment is defined in `docker-compose.yml`:
+The lab environment includes all services in a single `docker-compose.yml` file. For Lab 1, we'll focus on the basic attacker/victim interaction using the Kali attacker container and vulnerable services.
 
-```yaml
-version: '3.8'
-
-services:
-  victim:
-    image: alpine:latest
-    container_name: victim
-    hostname: victim
-    networks:
-      suricata-lab:
-        ipv4_address: 172.16.90.10
-    command: sh -c "apk add --no-cache python3 && python3 -m http.server 8000"
-    # Run a simple HTTP server on port 8000
-
-  attacker:
-    image: kalilinux/kali-rolling:latest
-    container_name: attacker
-    hostname: attacker
-    networks:
-      suricata-lab:
-        ipv4_address: 172.16.90.20
-    command: tail -f /dev/null
-    # Container will run in background
-
-networks:
-  suricata-lab:
-    driver: bridge
-    ipam:
-      config:
-        - subnet: 172.16.90.0/24
-```
-
-### Start Lab 1 Environment
+### Start Lab Environment
 ```bash
 docker compose up -d
 ```
@@ -251,18 +215,18 @@ docker exec attacker apt update && docker exec attacker apt install -y curl iput
 ### Lab 1: Testing Suricata Operation
 
 1.  **Testing IPS Mode (ICMP Blocking)**
-    Execute ping from `attacker` container to `victim` container:
+    Execute ping from `attacker` container to vulnerable services:
     ```bash
-    docker exec attacker ping -c 4 172.16.90.10
+    docker exec attacker ping -c 4 172.20.0.101
     ```
     *Expected result:* Packets should be lost (100% packet loss). The command won't receive a response as the rule with `drop` action blocks all ICMP traffic.
 
 2.  **Testing IDS Mode (HTTP Logging)**
-    Send HTTP request from `attacker` container to `victim` web server:
+    Send HTTP request from `attacker` container to vulnerable services:
     ```bash
-    docker exec attacker curl -s http://172.16.90.10:8000
+    docker exec attacker curl -s http://172.20.0.101:8161
     ```
-    *Expected result:* The command should execute successfully and return directory listing, as the HTTP rule is configured only for alerting (`alert`), not blocking.
+    *Expected result:* The command should execute successfully and return the ActiveMQ web interface, as the HTTP rule is configured only for alerting (`alert`), not blocking.
 
 3.  **Analyzing Suricata Logs**
     To view events in real-time, use `jq` for convenient JSON log formatting of `eve.json`:
@@ -320,16 +284,16 @@ docker exec attacker apt install -y nmap iputils-ping curl
 Run various scan types:
 ```bash
 # SYN scan
-docker exec attacker nmap -sS 172.16.90.10
+docker exec attacker nmap -sS 172.20.0.101
 
 # XMAS scan
-docker exec attacker nmap -sX 172.16.90.10
+docker exec attacker nmap -sX 172.20.0.101
 
 # UDP scan
-docker exec attacker nmap -sU 172.16.90.10
+docker exec attacker nmap -sU 172.20.0.101
 
 # OS fingerprinting
-docker exec attacker nmap -O 172.16.90.10
+docker exec attacker nmap -O 172.20.0.101
 ```
 
 ### Lab 2: Verify Detection
@@ -370,11 +334,11 @@ This lab demonstrates exploitation of intentionally vulnerable services and show
 ### Start Lab 3 Environment
 
 ```bash
-# Start the vulnerable services lab
-docker compose -f docker-compose.lab3.yml up -d
+# Start all lab services (includes vulnerable services)
+docker compose up -d
 
 # Check all containers are running
-docker compose -f docker-compose.lab3.yml ps
+docker compose ps
 
 # Access EveBox UI
 # Open http://localhost:5636 in your browser
@@ -510,7 +474,6 @@ docker restart victim-samba
 ```bash
 # Stop all containers
 docker compose down
-docker compose -f docker-compose.lab3.yml down
 
 # Reset Suricata
 sudo systemctl stop suricata
