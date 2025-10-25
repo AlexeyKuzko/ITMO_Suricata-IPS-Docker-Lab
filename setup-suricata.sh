@@ -197,7 +197,6 @@ ExecStart=/usr/bin/suricata -c /etc/suricata/suricata.yaml -q 1 --pidfile /run/s
 EOF
 sudo systemctl daemon-reload
 sudo systemctl enable suricata
-sudo systemctl restart suricata
 
 # Check if Suricata is running
 if sudo systemctl is-active --quiet suricata; then
