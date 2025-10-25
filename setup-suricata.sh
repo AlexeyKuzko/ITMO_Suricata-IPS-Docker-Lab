@@ -197,6 +197,7 @@ ExecStart=/usr/bin/suricata -c /etc/suricata/suricata.yaml -q 1 --pidfile /run/s
 EOF
 sudo systemctl daemon-reload
 sudo systemctl enable suricata
+sudo systemctl restart suricata
 
 # Check if Suricata is running
 if sudo systemctl is-active --quiet suricata; then
@@ -225,7 +226,7 @@ echo "   docker exec attacker ping -c 4 172.16.90.10"
 echo "   docker exec attacker curl -s http://172.16.90.10:8000"
 echo ""
 echo "4. Monitor Suricata logs:"
-echo "   sudo tail -f /var/log/suricata/eve.json | jq 'select(.event_type != \"flow\")'"
+echo "   sudo tail -f /var/log/suricata/eve.json"
 echo ""
 echo "5. Access EveBox UI:"
 echo "   http://localhost:5636"
