@@ -494,3 +494,56 @@ This lab provides three progressive learning modules:
 
 Each lab builds upon the previous one, providing hands-on experience with network security, intrusion detection/prevention, and vulnerability exploitation in a controlled environment.
 
+
+---
+
+## Lab 4 — OWASP Top 10 on OWASP Juice Shop + Suricata (IDS/IPS)
+
+**Цель:** развернуть уязвимое веб‑приложение OWASP Juice Shop и реализовать детектирование/блокировку атак из OWASP Top 10 при помощи правил Suricata.
+
+### 1) Развертывание Juice Shop
+В `docker-compose.yml` добавлен сервис `victim-juice-shop` на `172.20.0.106:3000`. Запуск:
+```bash
+docker compose up -d victim-juice-shop
+docker ps
+# Приложение будет доступно на http://localhost:3000
+```
+
+### 2) Установка правил Suricata для Лабы 4
+В репозитории добавлены правила `lab4/rules/lab4.rules` и скрипт установки `lab4/lab4-apply.sh`.
+```bash
+# На хосте с Suricata (нужен sudo)
+sudo ./lab4/lab4-apply.sh
+# Проверить алерты:
+sudo tail -f /var/log/suricata/eve.json | jq 'select(.event_type=="alert")'
+```
+
+### 3) Покрытие правил
+Включены сигнатуры для:
+- **A01** Broken Access Control (IDOR: `/rest/basket/<id>`)
+- **A02** Cryptographic Failures (Poison Null Byte, `.bak`, `coupons`)
+- **A03** Injection (SQLi: `OR 1=1`, `UNION SELECT`)
+- **A04** Insecure Design (brute-force на `/rest/user/login`)
+- **A05** Security Misconfiguration (`/ftp/`, `/metrics`, `/score-board`, `SecurityQuestions`)
+- **A06** Vulnerable/Outdated Components (fingerprinting по ошибкам и конфигам)
+- **A07** Auth Failures (SQLi bypass, multiple failed logins, user enumeration)
+- **A08** Software/Data Integrity Failures (XSS: `<script>`, `javascript:`, `onerror`, `<iframe>`)
+- **A09** Logging & Monitoring Failures (публичные логи `/support/logs`)
+- **A10** SSRF (metadata `169.254.169.254`, `localhost`, RFC1918, `file://`)
+
+### 4) Скрипты атак (для демонстрации)
+В каталоге `lab4/attacks/`:
+- `brute_login.py` — brute‑force на логин (A04)
+- `auth_weak_passwords.py` — проверка слабых паролей (A07)
+
+Запуск из контейнера `attacker` или на хосте (нужен Python3):
+```bash
+# пример внутри контейнера attacker:
+docker exec -it attacker bash
+apt update && apt install -y python3-pip jq curl
+pip3 install requests
+# смонтируйте репозиторий внутрь attacker либо скопируйте скрипты
+```
+
+### 5) Аналитика
+Для визуализации алертов используйте EveBox: http://localhost:5636

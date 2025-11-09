@@ -146,6 +146,19 @@ services:
       - /var/log/suricata:/var/log/suricata:ro
     command: evebox server --input /var/log/suricata/eve.json --sqlite --host 0.0.0.0 --port 5636
 
+
+  victim-juice-shop:
+    image: bkimminich/juice-shop:latest
+    container_name: victim-juice-shop
+    hostname: victim-juice-shop
+    networks:
+      vulnnet:
+        ipv4_address: 172.20.0.106
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+
 volumes:
   minio_data1:
   minio_data2:
