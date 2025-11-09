@@ -122,6 +122,80 @@ alert tcp any any -> any any (msg:"[IDS] Reverse Shell Pattern /bin/sh Detected"
 alert tcp any any -> any any (msg:"[IDS] Reverse Shell Pattern /bin/bash Detected"; flow:established; content:"/bin/bash"; nocase; sid:3000502; rev:1;)
 alert tcp any any -> any 4444 (msg:"[IDS] Connection to Metasploit Port 4444"; flow:to_server; threshold: type limit, track by_dst, count 1, seconds 60; sid:3000503; rev:1;)
 alert tcp any any -> any 4445 (msg:"[IDS] Connection to Metasploit Port 4445"; flow:to_server; threshold: type limit, track by_dst, count 1, seconds 60; sid:3000504; rev:1;)
+# ==========================
+# Lab 4: OWASP Top 10 — Juice Shop (HTTP)  [v2]
+# Корректные буферы: http.uri / http.method / http.request_body
+# ==========================
+
+# --- A01: Broken Access Control (IDOR: /rest/basket/<id>) ---
+alert http any any -> $HOME_NET 3000 (msg:"[IDS] IDOR basket access attempt"; flow:to_server,established; http.uri; pcre:"/\\/rest\\/basket\\/\\d+(\\/)?$/"; classtype:web-application-attack; sid:4601001; rev:1;)
+alert http any any -> $HOME_NET 3000 (msg:"[IDS] IDOR basket enumeration detected"; flow:to_server,established; http.uri; pcre:"/\\/rest\\/basket\\/\\d+(\\/)?$/"; threshold:type both, track by_src, count 3, seconds 10; classtype:web-application-attack; sid:4601002; rev:1;)
+drop  http any any -> $HOME_NET 3000 (msg:"[IPS] IDOR basket enumeration blocked"; flow:to_server,established; http.uri; pcre:"/\\/rest\\/basket\\/\\d+(\\/)?$/"; threshold:type both, track by_src, count 5, seconds 10; sid:4601101; rev:1;)
+
+# --- A02: Cryptographic Failures (backup, Poison Null Byte, coupons) ---
+alert http any any -> $HOME_NET 3000 (msg:"[IDS] FTP directory access"; flow:to_server,established; http.uri; content:"/ftp/"; classtype:policy-violation; sid:4602001; rev:1;)
+alert http any any -> $HOME_NET 3000 (msg:"[IDS] Backup file access attempt"; flow:to_server,established; http.uri; pcre:"/\\.bak(\\b|$)/i"; classtype:policy-violation; sid:4602002; rev:1;)
+alert http any any -> $HOME_NET 3000 (msg:"[IDS] Poison Null Byte detected"; flow:to_server,established; http.uri; pcre:"/%00|%2500/i"; classtype:web-application-attack; sid:4602003; rev:1;)
+alert http any any -> $HOME_NET 3000 (msg:"[IDS] Sensitive file access (coupons)"; flow:to_server,established; http.uri; content:"coupons"; nocase; classtype:policy-violation; sid:4602004; rev:1;)
+drop  http any any -> $HOME_NET 3000 (msg:"[IPS] Poison Null Byte blocked"; flow:to_server,established; http.uri; pcre:"/%00|%2500/i"; sid:4602101; rev:1;)
+drop  http any any -> $HOME_NET 3000 (msg:"[IPS] Backup file access blocked"; flow:to_server,established; http.uri; pcre:"/\\.bak(\\b|$)/i"; sid:4602102; rev:1;)
+
+# --- A03: Injection (SQLi) ---
+alert http any any -> $HOME_NET 3000 (msg:"[IDS] SQLi OR 1=1 detected"; flow:to_server,established; http.request_body; pcre:"/or\\s+1=1/i"; classtype:web-application-attack; sid:4603001; rev:1;)
+alert http any any -> $HOME_NET 3000 (msg:"[IDS] SQLi UNION SELECT detected"; flow:to_server,established; http.uri; pcre:"/union\\s+select/i"; classtype:web-application-attack; sid:4603002; rev:1;)
+alert http any any -> $HOME_NET 3000 (msg:"[IDS] SQLi comment found"; flow:to_server,established; http.request_body; content:"--"; classtype:web-application-attack; sid:4603003; rev:1;)
+drop  http any any -> $HOME_NET 3000 (msg:"[IPS] SQLi blocked on login"; flow:to_server,established; http.method; content:"POST"; http.uri; content:"/rest/user/login"; http.request_body; pcre:"/or\\s+1=1|union\\s+select/i"; sid:4603101; rev:1;)
+
+# --- A04: Insecure Design (no rate limiting on login) ---
+alert http any any -> $HOME_NET 3000 (msg:"[IDS] Login brute-force (>=5 in 10s)"; flow:to_server,established; http.method; content:"POST"; http.uri; content:"/rest/user/login"; threshold:type both, track by_src, count 5, seconds 10; classtype:attempted-recon; sid:4604001; rev:1;)
+alert http any any -> $HOME_NET 3000 (msg:"[IDS] Aggressive login brute-force (>=10 in 30s)"; flow:to_server,established; http.method; content:"POST"; http.uri; content:"/rest/user/login"; threshold:type both, track by_src, count 10, seconds 30; classtype:attempted-recon; sid:4604002; rev:1;)
+drop  http any any -> $HOME_NET 3000 (msg:"[IPS] Login brute-force blocked"; flow:to_server,established; http.method; content:"POST"; http.uri; content:"/rest/user/login"; threshold:type both, track by_src, count 5, seconds 10; sid:4604101; rev:1;)
+
+# --- A05: Security Misconfiguration ---
+alert http any any -> $HOME_NET 3000 (msg:"[IDS] Metrics endpoint access"; flow:to_server,established; http.uri; content:"/metrics"; classtype:policy-violation; sid:4605001; rev:1;)
+alert http any any -> $HOME_NET 3000 (msg:"[IDS] Security Questions API access"; flow:to_server,established; http.uri; content:"/api/SecurityQuestions"; classtype:policy-violation; sid:4605002; rev:1;)
+alert http any any -> $HOME_NET 3000 (msg:"[IDS] Score Board access"; flow:to_server,established; http.uri; content:"/score-board"; classtype:policy-violation; sid:4605003; rev:1;)
+drop  http any any -> $HOME_NET 3000 (msg:"[IPS] Metrics access blocked"; flow:to_server,established; http.uri; content:"/metrics"; sid:4605101; rev:1;)
+drop  http !$HOME_NET any -> $HOME_NET 3000 (msg:"[IPS] External Score Board access blocked"; flow:to_server,established; http.uri; content:"/score-board"; sid:4605102; rev:1;)
+
+# --- A06: Vulnerable/Outdated Components (fingerprinting) ---
+alert http any any -> $HOME_NET 3000 (msg:"[IDS] Error page fingerprinting attempt"; flow:to_server,established; http.uri; pcre:"/\\.(txt|exe|dll|jsp)$/i"; classtype:attempted-recon; sid:4606001; rev:1;)
+alert http any any -> $HOME_NET 3000 (msg:"[IDS] Dependency config access"; flow:to_server,established; http.uri; pcre:"/(package\\.json|composer\\.json|requirements\\.txt)/i"; classtype:attempted-recon; sid:4606002; rev:1;)
+
+# --- A07: Identification & Authentication Failures ---
+alert http any any -> $HOME_NET 3000 (msg:"[IDS] SQLi auth bypass"; flow:to_server,established; http.uri; content:"/rest/user/login"; http.request_body; pcre:"/or\\s+1=1/i"; classtype:web-application-attack; sid:4607001; rev:1;)
+alert http any any -> $HOME_NET 3000 (msg:"[IDS] Multiple failed login attempts"; flow:to_server,established; http.method; content:"POST"; http.uri; content:"/rest/user/login"; threshold:type both, track by_src, count 5, seconds 30; classtype:attempted-recon; sid:4607002; rev:1;)
+drop  http any any -> $HOME_NET 3000 (msg:"[IPS] Failed login threshold exceeded"; flow:to_server,established; http.uri; content:"/rest/user/login"; threshold:type both, track by_src, count 10, seconds 30; sid:4607101; rev:1;)
+
+# --- A08: XSS ---
+alert http any any -> $HOME_NET 3000 (msg:"[IDS] XSS script tag detected"; flow:to_server,established; http.uri; content:"<script"; nocase; classtype:web-application-attack; sid:4608001; rev:1;)
+alert http any any -> $HOME_NET 3000 (msg:"[IDS] XSS event handler detected"; flow:to_server,established; http.uri; pcre:"/on(load|error|click)\\s*=/i"; classtype:web-application-attack; sid:4608002; rev:1;)
+alert http any any -> $HOME_NET 3000 (msg:"[IDS] XSS javascript: URI detected"; flow:to_server,established; http.uri; content:"javascript:"; nocase; classtype:web-application-attack; sid:4608003; rev:1;)
+alert http any any -> $HOME_NET 3000 (msg:"[IDS] XSS iframe injection detected"; flow:to_server,established; http.uri; content:"<iframe"; nocase; classtype:web-application-attack; sid:4608004; rev:1;)
+alert http any any -> $HOME_NET 3000 (msg:"[IDS] XSS img onerror detected"; flow:to_server,established; http.uri; content:"<img"; nocase; content:"onerror"; nocase; distance:50; classtype:web-application-attack; sid:4608005; rev:1;)
+drop  http any any -> $HOME_NET 3000 (msg:"[IPS] XSS script blocked"; flow:to_server,established; http.uri; content:"<script"; nocase; sid:4608101; rev:1;)
+drop  http any any -> $HOME_NET 3000 (msg:"[IPS] XSS javascript URI blocked"; flow:to_server,established; http.uri; content:"javascript:"; nocase; sid:4608102; rev:1;)
+drop  http any any -> $HOME_NET 3000 (msg:"[IPS] XSS iframe blocked"; flow:to_server,established; http.uri; content:"<iframe"; nocase; sid:4608103; rev:1;)
+drop  http any any -> $HOME_NET 3000 (msg:"[IPS] XSS event handler blocked"; flow:to_server,established; http.uri; pcre:"/on(load|error|click)\\s*=/i"; sid:4608104; rev:1;)
+
+# --- A09: Logging & Monitoring Failures ---
+alert http any any -> $HOME_NET 3000 (msg:"[IDS] Log directory access"; flow:to_server,established; http.uri; content:"/support/logs"; classtype:policy-violation; sid:4609001; rev:1;)
+alert http any any -> $HOME_NET 3000 (msg:"[IDS] Log file download"; flow:to_server,established; http.uri; pcre:"/support\\/logs\\/(access\\.log|audit\\.json)/"; classtype:policy-violation; sid:4609002; rev:1;)
+drop  http any any -> $HOME_NET 3000 (msg:"[IPS] Log access blocked"; flow:to_server,established; http.uri; content:"/support/logs"; sid:4609101; rev:1;)
+
+# --- A10: SSRF (profile image URL) ---
+alert http any any -> $HOME_NET 3000 (msg:"[IDS] SSRF AWS metadata attempt"; flow:to_server,established; http.request_body; content:"169.254.169.254"; classtype:web-application-attack; sid:4610001; rev:1;)
+alert http any any -> $HOME_NET 3000 (msg:"[IDS] SSRF localhost targeting"; flow:to_server,established; http.request_body; pcre:"/(localhost|127\\.0\\.0\\.1)/i"; classtype:web-application-attack; sid:4610002; rev:1;)
+alert http any any -> $HOME_NET 3000 (msg:"[IDS] SSRF internal IP targeting"; flow:to_server,established; http.request_body; pcre:"/(10\\.|172\\.(1[6-9]|2[0-9]|3[01])\\.|192\\.168\\.)/"; classtype:web-application-attack; sid:4610003; rev:1;)
+alert http any any -> $HOME_NET 3000 (msg:"[IDS] SSRF via profile image URL endpoint"; flow:to_server,established; http.method; content:"POST"; http.uri; content:"/profile/image/url"; classtype:policy-violation; sid:4610004; rev:1;)
+alert http any any -> $HOME_NET 3000 (msg:"[IDS] SSRF file:// protocol attempt"; flow:to_server,established; http.request_body; content:"file://"; nocase; classtype:web-application-attack; sid:4610005; rev:1;)
+drop  http any any -> $HOME_NET 3000 (msg:"[IPS] SSRF AWS metadata blocked"; flow:to_server,established; http.request_body; content:"169.254.169.254"; sid:4610101; rev:1;)
+drop  http any any -> $HOME_NET 3000 (msg:"[IPS] SSRF localhost blocked"; flow:to_server,established; http.request_body; pcre:"/(localhost|127\\.0\\.0\\.1)/i"; sid:4610102; rev:1;)
+drop  http any any -> $HOME_NET 3000 (msg:"[IPS] SSRF internal IP blocked"; flow:to_server,established; http.request_body; pcre:"/(10\\.|172\\.(1[6-9]|2[0-9]|3[01])\\.|192\\.168\\.)/"; sid:4610103; rev:1;)
+drop  http any any -> $HOME_NET 3000 (msg:"[IPS] SSRF file protocol blocked"; flow:to_server,established; http.request_body; content:"file://"; nocase; sid:4610104; rev:1;)
+
+# ==========================
+# END Lab 4 v2
 EOF
 print_success "Custom rules created (including Lab 3 vulnerable services protection)"
 
