@@ -197,7 +197,7 @@ drop  http any any -> $HOME_NET 3000 (msg:"[IPS] SSRF file protocol blocked"; fl
 # ==========================
 # END Lab 4 v2
 EOF
-print_success "Custom rules created (including Lab 3 vulnerable services protection)"
+print_success "Custom rules created (including Lab 3 & Lab 4)"
 
 # Step 6: Basic suricata.yaml Configuration
 print_status "Step 6/8: Configuring suricata.yaml..."
