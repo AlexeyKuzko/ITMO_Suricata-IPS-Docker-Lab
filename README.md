@@ -21,8 +21,7 @@ ITMO_Suricata-IPS-Docker-Lab/
 
 ### Step 1: Clone Repository
 ```bash
-git clone <repository-url>
-cd ITMO_Suricata-IPS-Docker-Lab
+git clone https://github.com/AlexeyKuzko/ITMO_Suricata-IPS-Docker-Lab && cd ITMO_Suricata-IPS-Docker-Lab
 ```
 
 ### Step 2: Install Docker (if not already installed)
@@ -31,10 +30,8 @@ cd ITMO_Suricata-IPS-Docker-Lab
 curl -fsSL https://get.docker.com -o get-docker.sh
 sudo sh get-docker.sh
 sudo usermod -aG docker $USER
-
 # Install Docker Compose
 sudo apt install -y docker-compose-plugin
-
 # Logout and login again, or run:
 newgrp docker
 ```
@@ -42,8 +39,7 @@ newgrp docker
 ### Step 3: Automated Suricata Setup
 ```bash
 # Make the setup script executable and run it
-chmod +x setup-suricata.sh
-./setup-suricata.sh
+chmod +x setup-suricata.sh && ./setup-suricata.sh
 ```
 
 This script will:
